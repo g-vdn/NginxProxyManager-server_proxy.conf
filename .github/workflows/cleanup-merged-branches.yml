@@ -1,0 +1,35 @@
+name: One-time merged branch cleanup
+
+on:
+  push:
+    paths:
+      - ".github/workflows/cleanup-merged-branches.yml"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  delete-merged-branches:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete only preverified stale branches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const targets = [{"name":"codex/review-readme-and-configuration-for-improvements","pr":2,"sha":"dfbc630a6914b438719eff7e937343029c27538a"}];
+            const {owner, repo} = context.repo;
+            for (const target of targets) {
+              const {data: pr} = await github.rest.pulls.get({owner, repo, pull_number: target.pr});
+              if (!pr.merged || pr.head.ref !== target.name || pr.head.sha !== target.sha) {
+                throw new Error('PR no longer matches preverified merged branch: ' + target.name);
+              }
+              const ref = 'heads/' + target.name;
+              const {data: current} = await github.rest.git.getRef({owner, repo, ref});
+              if (current.object.sha !== target.sha) {
+                throw new Error('Branch changed after verification: ' + target.name);
+              }
+              await github.rest.git.deleteRef({owner, repo, ref});
+              core.info('Deleted old merged branch: ' + target.name);
+            }
